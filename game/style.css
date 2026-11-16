@@ -1,0 +1,48 @@
+/* EMBERKEEP — page chrome. The game itself is the canvas; this only centres
+   it on a dark page and scales it to fit the window, keeping 16:9. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #04050f;
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Segoe UI", system-ui, -apple-system, "DejaVu Sans", sans-serif;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+}
+
+#game {
+  display: block;
+  width: min(1280px, 96vw, 170vh);
+  height: auto;
+  aspect-ratio: 16 / 9;
+  background: #070818;
+  border-radius: 10px;
+  box-shadow: 0 0 60px rgba(255, 140, 40, 0.12), 0 0 0 1px rgba(139, 123, 255, 0.25);
+  cursor: crosshair;
+}
+
+.hint {
+  margin: 0;
+  color: #9a97b8;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
