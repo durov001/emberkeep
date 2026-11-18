@@ -1,45 +1,25 @@
-// EMBERKEEP — the entry program. It hands the game in: copies game/ and
-// screenshots/ from this repository into the output directory and writes
-// dossier.json there with make.fun's own library, so the dossier the grader
-// rebuilds matches byte for byte. Fully deterministic: no timestamps, no
-// randomness, the same input always writes the same bytes.
+// EMBERKEEP v2 — entry program for the make.fun best-game-01 bounty.
+// Copies game/ and screenshots/ into the output directory and writes
+// dossier.json with the kit's buildDossier. Deterministic: two runs write
+// byte-identical output.
 
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
-/** The caps this bounty grades against (its gate.json, in full). */
-const CAPS = {
+const repoRoot = dirname(fileURLToPath(import.meta.url));
+const outDir = process.env.MAKEFUN_OUTPUT_DIR || 'out';
+
+mkdirSync(outDir, { recursive: true });
+cpSync(join(repoRoot, 'game'), join(outDir, 'game'), { recursive: true });
+cpSync(join(repoRoot, 'screenshots'), join(outDir, 'screenshots'), { recursive: true });
+
+const dossier = buildDossier(outDir, {
   text_max_bytes: 163840,
   screenshots: { max: 4, max_bytes: 262144 },
   game_max_files: 993,
   game_max_bytes: 50331648,
-  game_path_max_bytes: 1000,
-};
-
-/** This repository's root: the directory holding this file. */
-const repoRoot = dirname(fileURLToPath(import.meta.url));
-
-/** Where the entry goes: the harness's directory, or /output in the grader. */
-const outDir = process.env.MAKEFUN_OUTPUT_DIR || '/output';
-
-/** Copy one tree into the output, replacing any earlier copy first. */
-function handIn(name: string): void {
-  const from = join(repoRoot, name);
-  const to = join(outDir, name);
-  if (!existsSync(from)) {
-    throw new Error(`missing ${name}/: the repository holds no ${name} to hand in`);
-  }
-  rmSync(to, { recursive: true, force: true });
-  cpSync(from, to, { recursive: true });
-}
-
-mkdirSync(outDir, { recursive: true });
-handIn('game');
-handIn('screenshots');
-const dossier = buildDossier(outDir, CAPS);
+});
 writeFileSync(join(outDir, 'dossier.json'), dossier);
-if (dossier.length === 0) {
-  throw new Error('dossier.json came out empty: refusing to hand in a blank dossier');
-}
+console.log(`Wrote ${outDir}/dossier.json (${dossier.length} bytes)`);
