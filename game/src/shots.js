@@ -1,187 +1,168 @@
-// EMBERKEEP — shots: deterministic staging for the entry's screenshots.
-// ?shot=start|play|upgrade|victory&seed=<n> stages a scene from the real
-// game state and the real renderer, then main.js paints one frame and sets
-// window.__shotReady. Nothing here runs during normal play.
+// Screenshot mode: ?shot=cover|start|fork|victory&seed=7 stages a fixed,
+// deterministic scene and freezes it, so the captured frame is the same on
+// every run. The game loop does not advance time in shot mode; a fixed
+// shotTime drives the flame flicker. window.__shotReady is set after the
+// first staged frame is painted.
 
-import { ARENA, UPGRADES } from './tuning.js';
-import {
-  addText, burst, createWorld, rollUpgrades, spawnEnemy,
-  startRun, updateWorld,
-} from './world.js';
-import { ScriptedInput } from './input.js';
+import { makeRng } from './rng.js';
+import { makeWorld } from './world.js';
+import { makeEnemy, makeBoss } from './enemies.js';
+import { ENEMY_COLORS } from './render.js';
+import { relicById } from './relics.js';
+import { forkPair } from './realms.js';
 
-/** Read the shot request from the URL, or null when this is a normal visit. */
-export function parseShotQuery() {
+export function getShotParam() {
   const params = new URLSearchParams(window.location.search);
-  const name = params.get('shot');
-  if (!name) return null;
-  const seed = Number(params.get('seed') || 7);
-  return { name, seed: Number.isFinite(seed) ? seed : 7 };
+  const shot = params.get('shot');
+  if (!shot) return null;
+  const seed = parseInt(params.get('seed') || '7', 10);
+  return { shot, seed: Number.isFinite(seed) ? seed : 7 };
 }
 
-/** Stage a named scene into a fresh world. Returns the staged world. */
-export function stageShot(name, seed) {
-  const world = createWorld(seed);
-  if (name === 'start') {
-    stageTitle(world);
-  } else if (name === 'play') {
-    stagePlay(world);
-  } else if (name === 'upgrade') {
-    stageUpgrade(world);
-  } else if (name === 'victory') {
-    stageVictory(world);
+function colorize(e) {
+  const c = ENEMY_COLORS[e.kind] || ENEMY_COLORS.wisp;
+  e.color = c.color;
+  e.rim = c.rim;
+  e.eyeColor = c.eye;
+  return e;
+}
+
+function stagedPlayer(game, x, y, light, hp) {
+  game.player.x = x;
+  game.player.y = y;
+  game.player.light = light;
+  game.player.hp = hp;
+  game.player.iframes = 0;
+}
+
+function giveRelics(game, ids) {
+  game.relics = ids.slice();
+  game.computeStats();
+}
+
+export function stageShot(game, param) {
+  const { shot, seed } = param;
+  const rng = makeRng(seed);
+  game.shotMode = true;
+  game.shotTime = 1.7;
+  game.rng = rng;
+
+  if (shot === 'cover') {
+    // Night 7, The Hollow: Gloommaw + full HUD + kindle choice, frozen.
+    game.difficulty = 'ember';
+    game.night = 7;
+    // No Bright Oath here on purpose: the cover prompt must read the base
+    // cost, "KINDLE [F] — 25 LIGHT". Twin Sparks still shows as a synergy.
+    giveRelics(game, ['emberglass', 'quickhands', 'shatterspark', 'widewick', 'gloombane', 'copperlantern', 'kindledheart']);
+    game.startNightState(7, rng, { hpMul: 1, dmgMul: 1 });
+    stagedPlayer(game, 420, 400, 62, 78);
+    game.player.maxHp = game.stats.maxHp;
+    game.kills = 148;
+    game.combo = 5;
+    game.comboTimer = 2.1;
+    game.score = 2840;
+    game.player.ember = 132;
+    game.player.dashCharges = 2;
+    game.player.novaCd = 4.2;
+
+    // One lit brazier (sanctuary, left) and one unlit brazier near the player.
+    const [b1, b2] = game.world.braziers;
+    b1.x = 180; b1.y = 300; b1.lit = true;
+    b2.x = 560; b2.y = 470; b2.lit = false;
+    game.world.braziers = game.world.braziers.slice(0, 4);
+    game.world.braziers[2].x = 1040; game.world.braziers[2].y = 180; game.world.braziers[2].lit = false;
+    game.world.braziers[3].x = 1050; game.world.braziers[3].y = 560; game.world.braziers[3].lit = false;
+
+    // Gloommaw, wounded, phase 1, center-right — close enough that the
+    // fight reads as one scene with the player.
+    const boss = colorize(makeBoss('gloommaw', 800, 360, 1, 1));
+    boss.hp = boss.maxHp * 0.62;
+    game.world.boss = boss;
+    game.world.bossSpawned = true;
+    game.enemies = [boss];
+    // Flanking shadows from the dark.
+    const flank = [
+      ['wisp', 1080, 200], ['wisp', 1120, 470], ['crawler', 980, 600],
+      ['spitter', 1120, 330], ['brute', 240, 580], ['splitter', 150, 150],
+      ['wisp', 640, 220], ['crawler', 300, 250],
+    ];
+    for (const [kind, x, y] of flank) {
+      const e = colorize(makeEnemy(kind, x, y, 1, 1));
+      if (kind === 'crawler') e.hp = e.maxHp * 0.55;
+      game.enemies.push(e);
+    }
+    // Sparks mid-flight toward the boss, ember pickups, a nova ring echo,
+    // and burning ground from Ember Glass.
+    game.sparks = [
+      { x: 540, y: 380, vx: 520, vy: -10, damage: 12, pierce: 1, life: 0.6 },
+      { x: 580, y: 405, vx: 520, vy: 8, damage: 12, pierce: 1, life: 0.6 },
+      { x: 620, y: 365, vx: 520, vy: -14, damage: 12, pierce: 1, life: 0.6 },
+      { x: 500, y: 350, vx: 480, vy: -40, damage: 12, pierce: 1, life: 0.6 },
+      { x: 660, y: 395, vx: 520, vy: 4, damage: 12, pierce: 1, life: 0.6 },
+      { x: 560, y: 430, vx: 500, vy: 30, damage: 12, pierce: 1, life: 0.6 },
+    ];
+    game.world.embers = [
+      { x: 380, y: 300 }, { x: 520, y: 520 }, { x: 700, y: 480 }, { x: 300, y: 430 },
+      { x: 640, y: 300 }, { x: 420, y: 480 },
+    ];
+    game.burningGround = [{ x: 620, y: 470, r: 110, life: 3 }];
+    game.novaFx = [{ x: 420, y: 400, r: 150, alpha: 0.7 }];
+    game.floaters = [
+      { x: 800, y: 265, text: '-24', color: '#ffd166', life: 0.9 },
+      { x: 980, y: 560, text: '-18', color: '#ffd166', life: 0.7 },
+    ];
+    game.showScreen('play');
+    game.promptBrazier = b2;
+  } else if (shot === 'start') {
+    // Title screen over a quiet Night 1 arena.
+    game.night = 1;
+    game.best = { score: 2840, night: 7, kills: 212 };
+    game.meta.ember = 240;
+    game.meta.workshop = { vitality: 2, wickcraft: 1, sparkforge: 2, swiftfoot: 0 };
+    game.startNightState(1, rng, { hpMul: 1, dmgMul: 1 });
+    stagedPlayer(game, 640, 380, 80, 100);
+    game.world.braziers[0].x = 320; game.world.braziers[0].y = 300; game.world.braziers[0].lit = true;
+    game.world.braziers[1].x = 960; game.world.braziers[1].y = 420; game.world.braziers[1].lit = false;
+    game.enemies = [
+      colorize(makeEnemy('wisp', 980, 200, 1, 1)),
+      colorize(makeEnemy('wisp', 220, 480, 1, 1)),
+      colorize(makeEnemy('crawler', 1080, 540, 1, 1)),
+    ];
+    game.showScreen('start');
+  } else if (shot === 'fork') {
+    // Fork after Night 4: two routes, current build, realm preview.
+    game.night = 4;
+    giveRelics(game, ['widewick', 'quickhands', 'kindledheart', 'copperlantern']);
+    game.kills = 96;
+    game.score = 1710;
+    game.player.ember = 88;
+    game.forkOptions = forkPair(4, rng);
+    game.startNightState(4, rng, { hpMul: 1, dmgMul: 1 });
+    stagedPlayer(game, 640, 380, 55, 64);
+    game.world.braziers[0].x = 320; game.world.braziers[0].y = 300; game.world.braziers[0].lit = true;
+    game.showScreen('fork');
+  } else if (shot === 'victory') {
+    // Victory recap after Night 7.
+    game.night = 7;
+    giveRelics(game, ['emberglass', 'brightoath', 'quickhands', 'shatterspark', 'widewick', 'gloombane', 'kindledheart']);
+    game.kills = 212;
+    game.score = 4860;
+    game.player.ember = 210;
+    game.runTime = 632;
+    game.victoryStats = {
+      nights: 7, kills: 212, relics: game.relics.map((id) => relicById(id).name),
+      ember: 210, score: 4860, time: '10:32', difficulty: 'Ember',
+    };
+    game.startNightState(7, rng, { hpMul: 1, dmgMul: 1 });
+    stagedPlayer(game, 640, 380, 90, 100);
+    game.world.braziers.forEach((b) => { b.lit = true; });
+    game.showScreen('victory');
   } else {
-    stageTitle(world);
+    return false;
   }
-  world.shake = 0;
-  world.flash = 0;
-  return world;
-}
 
-/** The title screen, flame flickering at a fixed moment. */
-function stageTitle(world) {
-  world.state = 'title';
-  world.animTime = 2.5;
-  world.best = 24830;
-}
-
-/**
- * A busy mid-game moment: wave 6, the light radius up, several enemy kinds
- * around the flame (some burning inside the glow, some dim silhouettes
- * beyond it), sparks in flight, damage numbers rising, a healthy score.
- * Built from the real rules: a real run, real upgrades, real enemies, then
- * a short burst of real simulation with a scripted autopilot.
- */
-function stagePlay(world) {
-  startRun(world);
-  const p = world.player;
-  // The run has earned a few blessings by wave 6.
-  const earned = ['wide-light', 'heavy-sparks', 'rapid-sparks', 'fierce-burn', 'stout-heart'];
-  applyNamedUpgrades(world, earned);
-  p.hp = 78;
-  // Wave 6, eleven of twenty-six slain.
-  world.wave = 6;
-  world.waveTotal = 26;
-  world.waveKills = 11;
-  world.waveMix = { wisp: 10, crawler: 8, spitter: 4, splitter: 3, brute: 1 };
-  world.spawnQueue = [];
-  world.enemies = [];
-  world.score = 8450;
-  world.kills = 63;
-  world.embersCollected = 41;
-  world.combo = 17;
-  world.comboTimer = 2.4;
-  world.bestCombo = 21;
-  world.best = 12400;
-  world.time = 214;
-  world.banner = null;
-  p.x = ARENA.x + ARENA.width * 0.42;
-  p.y = ARENA.y + ARENA.height * 0.52;
-  // A fixed cast spread across the arena: some burning inside the glow,
-  // some dim silhouettes with glowing eyes beyond it.
-  const cast = [
-    ['wisp', -140, -70], ['wisp', 170, 100], ['wisp', -320, 180], ['wisp', 380, -200],
-    ['wisp', -480, -120], ['wisp', 480, 220],
-    ['crawler', 110, -170], ['crawler', -210, -160], ['crawler', 300, 190], ['crawler', -400, -80],
-    ['crawler', 520, -40],
-    ['spitter', 420, 80], ['spitter', -460, 240],
-    ['splitter', 240, -280], ['splitter', -180, 240],
-    ['brute', 480, -180],
-  ];
-  for (const [type, dx, dy] of cast) {
-    const e = spawnEnemy(world, type, p.x + dx, p.y + dy);
-    if (type === 'brute') e.hp = Math.round(e.maxHp * 0.62);
-    if (type === 'splitter') e.hp = Math.round(e.maxHp * 0.8);
-  }
-  // Embers on the floor, a heart, and numbers already in the air.
-  for (let i = 0; i < 9; i++) {
-    const a = world.rng.angle();
-    const r = world.rng.range(60, 260);
-    world.embers.push({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r, vx: 0, vy: 0, value: p.emberValue, t: 0 });
-  }
-  world.hearts.push({ x: p.x + 200, y: p.y + 120, vx: 0, vy: 0, t: 0 });
-  addText(world, p.x + 150, p.y - 120, '24', '#fff3c4', 15);
-  addText(world, p.x - 120, p.y - 90, '18', '#ff7a29', 14);
-  addText(world, p.x + 60, p.y + 140, '+150', '#ffd94a', 15);
-  burst(world, p.x + 260, p.y + 160, '#ffb347', 10, 160, 0.6, 3);
-  // Let the real rules run for a short burst: sparks fly, burn ticks land.
-  const auto = new ScriptedInput();
-  auto.mouseX = p.x + 220;
-  auto.mouseY = p.y - 140;
-  for (let i = 0; i < 55; i++) {
-    const a = (i / 55) * Math.PI * 1.2;
-    auto.axis = { x: Math.cos(a) * 0.6, y: Math.sin(a) * 0.6 };
-    updateWorld(world, auto, null, 1 / 60);
-    if (world.state !== 'playing') break;
-  }
-  world.state = 'playing';
-  // Frame the shot: a live combo, a healthy flame, fresh numbers in the air.
-  world.combo = 17;
-  world.comboTimer = 2.4;
-  world.bestCombo = 21;
-  p.hp = 86;
-  addText(world, p.x + 120, p.y - 110, '24', '#fff3c4', 15);
-  addText(world, p.x - 90, p.y - 80, '18', '#ff7a29', 14);
-  addText(world, p.x + 40, p.y + 120, '+150', '#ffd94a', 15);
-  for (let i = 0; i < 5; i++) {
-    const a = world.rng.angle();
-    const r = world.rng.range(80, 240);
-    world.embers.push({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r, vx: 0, vy: 0, value: p.emberValue, t: 0 });
-  }
-  world.animTime = 3.7;
-}
-
-/** Apply upgrade definitions by id, without opening the next wave. */
-function applyNamedUpgrades(world, ids) {
-  for (const id of ids) {
-    const def = UPGRADES.find((u) => u.id === id);
-    if (def) def.apply(world.player);
-  }
-}
-
-/** The between-wave choice after wave 5, three blessings on the table. */
-function stageUpgrade(world) {
-  startRun(world);
-  const p = world.player;
-  applyNamedUpgrades(world, ['wide-light', 'heavy-sparks', 'stout-heart']);
-  p.hp = 96;
-  world.wave = 5;
-  world.waveTotal = 26;
-  world.waveKills = 26;
-  world.waveMix = {};
-  world.spawnQueue = [];
-  world.enemies = [];
-  world.embers = [];
-  world.score = 6230;
-  world.kills = 58;
-  world.embersCollected = 36;
-  world.best = 12400;
-  world.time = 168;
-  world.banner = null;
-  world.state = 'upgrade';
-  rollUpgrades(world);
-  world.animTime = 1.8;
-}
-
-/** The victory screen after the Gloommaw falls. */
-function stageVictory(world) {
-  startRun(world);
-  const p = world.player;
-  applyNamedUpgrades(world, ['wide-light', 'fierce-burn', 'heavy-sparks', 'rapid-sparks', 'stout-heart', 'grand-nova']);
-  p.hp = 41;
-  world.wave = 10;
-  world.waveTotal = 1;
-  world.waveKills = 1;
-  world.spawnQueue = [];
-  world.enemies = [];
-  world.score = 24830;
-  world.kills = 187;
-  world.embersCollected = 312;
-  world.combo = 0;
-  world.bestCombo = 24;
-  world.time = 482;
-  world.best = 24830;
-  world.banner = null;
-  world.state = 'victory';
-  world.animTime = 2.2;
+  game.updateHud();
+  game.renderFrame();
+  window.__shotReady = true;
+  return true;
 }

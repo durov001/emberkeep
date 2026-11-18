@@ -1,124 +1,67 @@
-// EMBERKEEP — input: keyboard and mouse, read by the game loop once a frame.
-// Keys are tracked by code (so WASD and arrows both work), and "pressed"
-// edges are consumed once, so a tap never fires twice.
+// Keyboard + mouse state. Keys are tracked by e.code so WASD and arrows both
+// work; edge-triggered actions (dash, nova, kindle, pause) are consumed once
+// per press via pressed().
 
-import { VIEW } from './tuning.js';
+export function createInput(canvas) {
+  const keys = new Set();
+  const justPressed = new Set();
+  const mouse = { x: 640, y: 360, down: false };
 
-/** The movement keys, mapped to their axis direction. */
-const MOVE_KEYS = {
-  KeyW: [0, -1], ArrowUp: [0, -1],
-  KeyS: [0, 1], ArrowDown: [0, 1],
-  KeyA: [-1, 0], ArrowLeft: [-1, 0],
-  KeyD: [1, 0], ArrowRight: [1, 0],
-};
-
-export class Input {
-  constructor(canvas) {
-    this.canvas = canvas;
-    this.down = new Set();
-    this.pressed = new Set();
-    this.mouseX = VIEW.width / 2;
-    this.mouseY = VIEW.height / 2 - 120;
-    this.mouseDown = false;
-    this.clicked = false;
-    this._onKeyDown = (e) => {
-      if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
-      if (!e.repeat) this.pressed.add(e.code);
-      this.down.add(e.code);
-    };
-    this._onKeyUp = (e) => this.down.delete(e.code);
-    this._onMouseMove = (e) => {
-      const rect = this.canvas.getBoundingClientRect();
-      this.mouseX = ((e.clientX - rect.left) / rect.width) * VIEW.width;
-      this.mouseY = ((e.clientY - rect.top) / rect.height) * VIEW.height;
-    };
-    this._onMouseDown = (e) => {
-      this._onMouseMove(e);
-      this.mouseDown = true;
-      this.clicked = true;
-    };
-    this._onMouseUp = () => { this.mouseDown = false; };
-    this._onBlur = () => { this.down.clear(); this.mouseDown = false; };
-    window.addEventListener('keydown', this._onKeyDown);
-    window.addEventListener('keyup', this._onKeyUp);
-    window.addEventListener('blur', this._onBlur);
-    canvas.addEventListener('mousemove', this._onMouseMove);
-    canvas.addEventListener('mousedown', this._onMouseDown);
-    window.addEventListener('mouseup', this._onMouseUp);
-  }
-
-  /** Is the key held right now? */
-  isDown(code) {
-    return this.down.has(code);
-  }
-
-  /** Was the key tapped since the last frame? Consumes the edge. */
-  wasPressed(code) {
-    if (this.pressed.has(code)) {
-      this.pressed.delete(code);
-      return true;
+  function onKeyDown(e) {
+    if (e.repeat) return;
+    keys.add(e.code);
+    justPressed.add(e.code);
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+      e.preventDefault();
     }
-    return false;
+  }
+  function onKeyUp(e) {
+    keys.delete(e.code);
+  }
+  function onMouseMove(e) {
+    const r = canvas.getBoundingClientRect();
+    mouse.x = ((e.clientX - r.left) / r.width) * canvas.width;
+    mouse.y = ((e.clientY - r.top) / r.height) * canvas.height;
+  }
+  function onMouseDown() {
+    mouse.down = true;
+  }
+  function onMouseUp() {
+    mouse.down = false;
   }
 
-  /** Was the mouse clicked since the last frame? Consumes the edge. */
-  wasClicked() {
-    if (this.clicked) {
-      this.clicked = false;
-      return true;
-    }
-    return false;
-  }
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
+  window.addEventListener('blur', () => keys.clear());
+  canvas.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('mousedown', onMouseDown);
+  window.addEventListener('mouseup', onMouseUp);
 
-  /** The movement axis from WASD/arrows, normalized. */
-  moveAxis() {
-    let x = 0;
-    let y = 0;
-    for (const code of this.down) {
-      const dir = MOVE_KEYS[code];
-      if (dir) {
-        x += dir[0];
-        y += dir[1];
+  return {
+    mouse,
+    down(code) {
+      return keys.has(code);
+    },
+    pressed(code) {
+      return justPressed.has(code);
+    },
+    // Movement vector from WASD / arrows, normalized.
+    moveVector() {
+      let x = 0;
+      let y = 0;
+      if (keys.has('KeyA') || keys.has('ArrowLeft')) x -= 1;
+      if (keys.has('KeyD') || keys.has('ArrowRight')) x += 1;
+      if (keys.has('KeyW') || keys.has('ArrowUp')) y -= 1;
+      if (keys.has('KeyS') || keys.has('ArrowDown')) y += 1;
+      if (x !== 0 && y !== 0) {
+        const inv = 1 / Math.SQRT2;
+        x *= inv;
+        y *= inv;
       }
-    }
-    if (x !== 0 || y !== 0) {
-      const len = Math.hypot(x, y);
-      x /= len;
-      y /= len;
-    }
-    return { x, y };
-  }
-
-  /** Clear the edges the frame did not consume, so taps never leak a frame. */
-  endFrame() {
-    this.pressed.clear();
-    this.clicked = false;
-  }
-}
-
-/** A scripted input stand-in for staged screenshots: same interface, no keys. */
-export class ScriptedInput {
-  constructor() {
-    this.mouseX = VIEW.width / 2 + 180;
-    this.mouseY = VIEW.height / 2 - 60;
-    this.axis = { x: 0, y: 0 };
-  }
-
-  isDown() {
-    return false;
-  }
-
-  wasPressed() {
-    return false;
-  }
-
-  wasClicked() {
-    return false;
-  }
-
-  moveAxis() {
-    return this.axis;
-  }
-
-  endFrame() {}
+      return { x, y };
+    },
+    endFrame() {
+      justPressed.clear();
+    },
+  };
 }

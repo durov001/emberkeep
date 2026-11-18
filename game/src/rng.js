@@ -1,74 +1,42 @@
-// EMBERKEEP — seeded random numbers. The whole game draws its luck from one
-// small generator, so a screenshot staged with a fixed seed stages the same
-// world every time, and a run can be replayed exactly.
+// Seeded RNG (mulberry32) — every run of the game with the same seed plays
+// the same spawn order, so the screenshot modes are deterministic.
 
-/** mulberry32: a tiny fast seeded PRNG with a good spread for game use. */
-export function mulberry32(seed) {
+export function makeRng(seed) {
   let a = seed >>> 0;
-  return function next() {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  return {
+    next() {
+      a |= 0;
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    },
   };
 }
 
-/** Turns any string into a 32-bit seed (FNV-1a hash). */
-export function hashSeed(text) {
-  let h = 2166136261;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
+export function rand(rng, lo, hi) {
+  return lo + rng.next() * (hi - lo);
 }
 
-/** A random source with the helpers the game needs. */
-export class Rng {
-  constructor(seed) {
-    this.next = mulberry32(typeof seed === 'string' ? hashSeed(seed) : seed);
-  }
+export function randInt(rng, lo, hi) {
+  return Math.floor(rand(rng, lo, hi + 1));
+}
 
-  /** A float in [0, 1). */
-  float() {
-    return this.next();
-  }
+export function pick(rng, arr) {
+  return arr[Math.floor(rng.next() * arr.length)];
+}
 
-  /** A float in [min, max). */
-  range(min, max) {
-    return min + this.next() * (max - min);
-  }
+export function chance(rng, p) {
+  return rng.next() < p;
+}
 
-  /** An integer in [min, max] inclusive. */
-  int(min, max) {
-    return min + Math.floor(this.next() * (max - min + 1));
+// Fisher-Yates shuffle, in place, using the seeded rng.
+export function shuffle(rng, arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng.next() * (i + 1));
+    const t = arr[i];
+    arr[i] = arr[j];
+    arr[j] = t;
   }
-
-  /** True with probability p (0..1). */
-  chance(p) {
-    return this.next() < p;
-  }
-
-  /** One element of an array, uniformly. */
-  pick(list) {
-    return list[Math.floor(this.next() * list.length)];
-  }
-
-  /** A new array with the elements shuffled (Fisher-Yates). */
-  shuffle(list) {
-    const out = list.slice();
-    for (let i = out.length - 1; i > 0; i--) {
-      const j = Math.floor(this.next() * (i + 1));
-      const tmp = out[i];
-      out[i] = out[j];
-      out[j] = tmp;
-    }
-    return out;
-  }
-
-  /** An angle in radians, uniform over the full circle. */
-  angle() {
-    return this.next() * Math.PI * 2;
-  }
+  return arr;
 }
