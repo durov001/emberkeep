@@ -3,15 +3,54 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EMBERKEEP — keep the last flame alive</title>
-<link rel="icon" href="data:,">
+<title>EMBERKEEP — Guard the Last Ember</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<main class="stage">
-  <canvas id="game" width="1280" height="720" aria-label="EMBERKEEP game canvas"></canvas>
-  <p class="hint">WASD move &middot; mouse aim &middot; SPACE dash &middot; E nova &middot; P pause &middot; M mute</p>
-</main>
+<div id="wrap">
+  <canvas id="game" width="1280" height="720"></canvas>
+
+  <div id="hud">
+    <div class="hud-top">
+      <div class="hud-left">
+        <div class="bar hp"><div id="hpFill" class="fill"></div><span id="hpText" class="bar-text">HP 100 / 100</span></div>
+        <div class="bar light"><div id="lightFill" class="fill"></div><span id="lightText" class="bar-text">LIGHT 80 / 100</span></div>
+      </div>
+      <div class="hud-center">
+        <div id="nightLabel" class="night">NIGHT 1 / 7</div>
+        <div id="realmLabel" class="realm">Ember Wastes</div>
+        <div id="enemiesLeft" class="left">18 shadows left</div>
+      </div>
+      <div class="hud-right">
+        <div class="stat"><span class="k">SCORE</span><span id="scoreVal" class="v">0</span></div>
+        <div class="stat"><span class="k">KILLS</span><span id="killsVal" class="v">0</span></div>
+        <div class="stat"><span class="k">EMBER</span><span id="emberVal" class="v">0</span></div>
+        <div id="comboVal" class="combo"></div>
+      </div>
+    </div>
+
+    <div id="bossBar" class="boss-bar hidden">
+      <div id="bossName" class="boss-name">Gloommaw</div>
+      <div class="bar boss"><div id="bossFill" class="fill"></div></div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <div id="kindlePrompt" class="kindle-prompt hidden">KINDLE [F] — 25 LIGHT</div>
+
+    <div class="hud-bottom">
+      <div class="hud-build">
+        <div id="relicRow" class="relic-row"></div>
+        <div id="synergyRow" class="synergy-row"></div>
+      </div>
+      <div class="hud-actions">
+        <div id="dashPips" class="dash-pips"></div>
+        <div id="novaLabel" class="nova-label">NOVA [E] READY</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen" class="screen hidden"></div>
+</div>
 <script type="module" src="src/main.js"></script>
 </body>
 </html>
